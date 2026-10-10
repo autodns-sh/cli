@@ -106,6 +106,8 @@ make release
 
 `make release` writes cross-platform binaries and checksums to `dist/`.
 
+`make build` writes `./autodns` in this checkout. When working alongside the service repository, its `just build` command builds both the API and CLI, and `just build cli` builds only the CLI. Both copy the freshly built CLI to `./autodns` in the service checkout. The service expects this repository at `../autodns-cli`; set `AUTODNS_CLI_DIR` there to override the path.
+
 ## Implementation Notes
 
 - Keep the CLI standard-library only unless a dependency removes meaningful complexity.
