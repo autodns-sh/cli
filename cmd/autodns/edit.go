@@ -238,7 +238,10 @@ func getAPIJSON(ctx context.Context, apiURL, token, path string, out any) error 
 		return fmt.Errorf("http request: %w", err)
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return apiError(endpoint.String(), resp, body)

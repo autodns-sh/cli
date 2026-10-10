@@ -20,6 +20,7 @@ Usage:
 
 Commands:
   login     Authenticate using GitHub OAuth device flow
+  list      List accessible domains and their record counts
   import    Import a BIND zone file (idempotent apply)
   edit      Edit an existing domain in your terminal editor
   help      Show this help message
@@ -86,6 +87,8 @@ func main() {
 	switch cmd {
 	case "login":
 		runLogin(os.Args[2:])
+	case "list":
+		runList(os.Args[2:])
 	case "import":
 		runImport(os.Args[2:])
 	case "edit":

@@ -1,11 +1,23 @@
 # AutoDNS CLI
 
-`autodns` is the command-line client for AutoDNS. It authenticates with GitHub OAuth device flow, stores a local bearer token, and calls the AutoDNS HTTP API for zone imports and terminal-based record editing.
+`autodns` is the command-line client for AutoDNS. It authenticates with GitHub OAuth device flow, stores a local bearer token, and calls the AutoDNS HTTP API for domain inventories, zone imports, and terminal-based record editing.
+
+## Quick Start
+
+With `autodns` installed, sign in and list the domains you can access:
+
+```sh
+autodns login
+autodns list
+```
+
+Use `autodns list --json` for scripts, or `autodns list --help` for command options.
 
 ## Commands
 
 ```sh
 autodns login
+autodns list [--json] [--api-url URL]
 autodns import [--dry-run] [--api-url URL] <zone-file>
 autodns edit [--api-url URL] <domain-name>
 autodns help
@@ -17,6 +29,25 @@ autodns help
 ~/.config/autodns/token.json
 ```
 
+`list` shows owned and shared domains alphabetically with their stored record counts and totals:
+
+```text
+DOMAIN       RECORDS
+example.com  12
+example.net  5
+example.org  8
+
+3 domains / 25 records
+```
+
+`autodns list --json` prints only a JSON array, without table headers or totals:
+
+```json
+[{"Name":"example.com","RecordCount":12},{"Name":"example.net","RecordCount":5},{"Name":"example.org","RecordCount":8}]
+```
+
+Empty accounts produce `0 domains / 0 records` in table mode or `[]` in JSON mode. Counts come from a separate API request per domain and exclude synthesized authoritative SOA and NS records. If any request fails, the command exits nonzero without printing partial results. The listing does not report provider or synchronization state.
+
 `import` treats a BIND zone file as desired state. The server computes the DNS diff and applies it unless `--dry-run` is set.
 
 `edit` fetches the existing records for a domain, opens a temporary BIND-style zone file in `$VISUAL`, `$EDITOR`, or `vi`, shows the diff, and applies it after confirmation.
@@ -25,11 +56,11 @@ autodns help
 
 The CLI uses `https://app.autodns.sh` by default.
 
-Override the API base URL with either:
+For `list`, `import`, and `edit`, override the API base URL with `AUTODNS_API_URL` or `--api-url`. The command-line flag takes precedence over the environment variable:
 
 ```sh
-AUTODNS_API_URL=https://app.autodns.sh autodns import zone.txt
-autodns import --api-url https://app.autodns.sh zone.txt
+AUTODNS_API_URL=https://dns.example.com autodns list
+autodns list --api-url https://dns.example.com
 ```
 
 The GitHub OAuth device-flow client ID is built into official releases. Custom builds can override it with:
@@ -82,3 +113,7 @@ make release
 - The API currently returns JSON with Go-style field names such as `Domain`, `Changes`, `Create`, and `Update`; the CLI structs mirror that wire shape.
 - Avoid printing raw HTML or large non-JSON response bodies in terminal errors.
 - Do not commit release artifacts from `dist/`.
+
+## License
+
+MIT; see [LICENSE](LICENSE).
