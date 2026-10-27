@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -254,6 +255,10 @@ func fetchDomainRecords(ctx context.Context, apiURL, token, domainID string) ([]
 	return records, nil
 }
 
+// errUnauthorized marks a 401 so callers can retry with fresh credentials
+// (another process may have rotated the token mid-command).
+var errUnauthorized = errors.New("unauthorized")
+
 func getAPIJSON(ctx context.Context, apiURL, token, path string, out any) error {
 	endpoint, err := url.Parse(strings.TrimRight(apiURL, "/") + path)
 	if err != nil {
@@ -277,6 +282,11 @@ func getAPIJSON(ctx context.Context, apiURL, token, path string, out any) error 
 		return fmt.Errorf("read response: %w", err)
 	}
 
+	if resp.StatusCode == http.StatusUnauthorized {
+		// Keep the server's error text for the user, but mark it so
+		// getAPIJSONFresh can retry with reloaded credentials.
+		return fmt.Errorf("%w: %v", errUnauthorized, apiError(endpoint.String(), resp, body))
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return apiError(endpoint.String(), resp, body)
 	}
@@ -284,6 +294,20 @@ func getAPIJSON(ctx context.Context, apiURL, token, path string, out any) error 
 		return fmt.Errorf("decode response: %w", err)
 	}
 	return nil
+}
+
+// getAPIJSONFresh calls getAPIJSON, and on 401 reloads credentials once via
+// reload and retries. Covers rotation by a concurrent process mid-command.
+func getAPIJSONFresh(ctx context.Context, apiURL, token, path string, out any, reload func() (string, error)) error {
+	err := getAPIJSON(ctx, apiURL, token, path, out)
+	if !errors.Is(err, errUnauthorized) || reload == nil {
+		return err
+	}
+	fresh, rerr := reload()
+	if rerr != nil || fresh == token {
+		return err
+	}
+	return getAPIJSON(ctx, apiURL, fresh, path, out)
 }
 
 func renderEditableZone(domain string, records []apiRecord) string {

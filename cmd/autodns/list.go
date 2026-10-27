@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -60,7 +61,16 @@ func listCommand(ctx context.Context, args []string, out io.Writer, readToken fu
 	if err != nil {
 		return fmt.Errorf("not logged in (%v). Run 'autodns login' first.", err)
 	}
-	return listDomains(ctx, opts, tok.AccessToken, out)
+	// Reload via the injected reader so tests (and alternate token sources)
+	// never touch the real ~/.config.
+	reload := func() (string, error) {
+		t, err := readToken()
+		if err != nil {
+			return "", err
+		}
+		return t.AccessToken, nil
+	}
+	return listDomains(ctx, opts, tok.AccessToken, out, reload)
 }
 
 func parseListArgs(args []string) (listOptions, bool, error) {
@@ -92,9 +102,9 @@ func parseListArgs(args []string) (listOptions, bool, error) {
 	return opts, false, nil
 }
 
-func listDomains(ctx context.Context, opts listOptions, token string, out io.Writer) error {
+func listDomains(ctx context.Context, opts listOptions, token string, out io.Writer, reload func() (string, error)) error {
 	var domains []apiDomain
-	if err := getAPIJSON(ctx, opts.APIURL, token, "/api/v1/domains", &domains); err != nil {
+	if err := getAPIJSONFresh(ctx, opts.APIURL, token, "/api/v1/domains", &domains, reload); err != nil {
 		return fmt.Errorf("listing domains: %w", err)
 	}
 	sort.Slice(domains, func(i, j int) bool { return domains[i].Name < domains[j].Name })
@@ -102,8 +112,9 @@ func listDomains(ctx context.Context, opts listOptions, token string, out io.Wri
 	inventory := make([]domainSummary, 0, len(domains))
 	total := 0
 	for _, d := range domains {
-		records, err := fetchDomainRecords(ctx, opts.APIURL, token, d.ID)
-		if err != nil {
+		var records []apiRecord
+		path := "/api/v1/domains/" + url.PathEscape(d.ID) + "/records"
+		if err := getAPIJSONFresh(ctx, opts.APIURL, token, path, &records, reload); err != nil {
 			return fmt.Errorf("listing records for %q: %w", d.Name, err)
 		}
 		inventory = append(inventory, domainSummary{Name: d.Name, RecordCount: len(records)})

@@ -385,9 +385,14 @@ func refreshIfNeeded(tok *savedToken) (*savedToken, error) {
 	if tr.Error != "" {
 		return nil, fmt.Errorf("refresh failed (%s) — run 'autodns login' again", tr.Error)
 	}
-	next, _, err := tokenFromResponse(tr, tok.Server, tok.ClientID)
+	next, pending, err := tokenFromResponse(tr, tok.Server, tok.ClientID)
 	if err != nil {
 		return nil, err
+	}
+	// A refresh must yield a complete token; never persist a pending/nil
+	// result over existing credentials (would destroy them and panic later).
+	if pending || next == nil {
+		return nil, fmt.Errorf("refresh returned an incomplete response — run 'autodns login' again")
 	}
 	if err := saveToken(next); err != nil {
 		return nil, fmt.Errorf("saving refreshed token: %w", err)
@@ -395,34 +400,7 @@ func refreshIfNeeded(tok *savedToken) (*savedToken, error) {
 	return next, nil
 }
 
-// lockTokenFile takes an exclusive lock via atomic lock-directory creation —
-// stdlib-only and portable (flock is unavailable on Windows). Stale locks
-// older than 2 minutes are broken: a crashed process must not wedge logins
-// forever.
-func lockTokenFile() (func(), error) {
-	path := filepath.Join(os.Getenv("HOME"), ".config", "autodns", "token.lock")
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return nil, err
-	}
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		err := os.Mkdir(path, 0700)
-		if err == nil {
-			return func() { _ = os.Remove(path) }, nil
-		}
-		if !os.IsExist(err) {
-			return nil, fmt.Errorf("locking token file: %w", err)
-		}
-		if info, statErr := os.Stat(path); statErr == nil && time.Since(info.ModTime()) > 2*time.Minute {
-			_ = os.Remove(path) // stale lock from a crashed process
-			continue
-		}
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("timed out waiting for token lock")
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-}
+// lockTokenFile lives in lock_unix.go / lock_windows.go (platform-specific).
 
 // readTokenFile reads token.json without refreshing (used under lock).
 func readTokenFile() (*savedToken, error) {
