@@ -1,6 +1,6 @@
 # AutoDNS CLI
 
-`autodns` is the command-line client for AutoDNS. It authenticates with GitHub OAuth device flow, stores a local bearer token, and calls the AutoDNS HTTP API for domain inventories, zone imports, and terminal-based record editing.
+`autodns` is the command-line client for AutoDNS. It authenticates against the AutoDNS authorization server with the OAuth device flow (or a panel-created `adns_k1_` API key), stores a local token, and calls the AutoDNS HTTP API for domain inventories, zone imports, and terminal-based record editing.
 
 ## Quick Start
 
@@ -22,6 +22,20 @@ autodns import [--dry-run] [--api-url URL] <zone-file>
 autodns edit [--api-url URL] <domain-name>
 autodns help
 ```
+
+## Login
+
+```sh
+autodns login                      # device flow: visit the URL, enter the code, approve
+autodns login --key adns_k1_...    # save a manually created API key instead
+```
+
+The device flow works on headless machines: no browser or localhost redirect is
+needed on the machine running the CLI — you approve on any device that has one.
+Access tokens are short-lived and refreshed automatically via a rotating
+refresh token. Manual API keys never expire until revoked in the panel.
+
+The OAuth client registration is cached at `~/.config/autodns/client.json`.
 
 `login` saves a token at:
 
@@ -56,19 +70,14 @@ Empty accounts produce `0 domains / 0 records` in table mode or `[]` in JSON mod
 
 The CLI uses `https://app.autodns.sh` by default.
 
-For `list`, `import`, and `edit`, override the API base URL with `AUTODNS_API_URL` or `--api-url`. The command-line flag takes precedence over the environment variable:
+For `login`, `list`, `import`, and `edit`, override the server URL with
+`AUTODNS_API_URL`, `--server` (login) or `--api-url` (other commands). The
+command-line flag takes precedence over the environment variable:
 
 ```sh
 AUTODNS_API_URL=https://dns.example.com autodns list
 autodns list --api-url https://dns.example.com
-```
-
-The GitHub OAuth device-flow client ID is built into official releases. Custom builds can override it with:
-
-```sh
-AUTODNS_GITHUB_CLIENT_ID=... autodns login
-autodns login --client-id ...
-go build -ldflags="-X main.defaultClientID=..." ./cmd/autodns
+autodns login --server https://dns.example.com
 ```
 
 ## Releases

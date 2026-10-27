@@ -32,8 +32,8 @@ Description:
   SOA and NS records in the source zone are ignored (autodns synthesizes its
   own authoritative records). Exact-duplicate records are collapsed.
 
-  Authentication: uses the GitHub token saved by "autodns login" at
-  ~/.config/autodns/token.json.
+  Authentication: uses the token saved by "autodns login" at
+  ~/.config/autodns/token.json (adns_ API key or OAuth device-flow token).
 `
 
 // zoneDiff mirrors the server's dns.ZoneDiff JSON shape so we can decode it.
@@ -268,7 +268,7 @@ func loadToken() (*savedToken, error) {
 	if tok.AccessToken == "" {
 		return nil, fmt.Errorf("token file has no access_token")
 	}
-	return &tok, nil
+	return refreshIfNeeded(&tok)
 }
 
 func envOrDefault(key, fallback string) string {

@@ -27,8 +27,8 @@ Description:
   Fetches each domain's records separately; any failed request aborts the listing
   without printing partial results.
 
-  Authentication: uses the GitHub token saved by "autodns login" at
-  ~/.config/autodns/token.json.
+  Authentication: uses the token saved by "autodns login" at
+  ~/.config/autodns/token.json (adns_ API key or OAuth device-flow token).
 `
 
 type listOptions struct {

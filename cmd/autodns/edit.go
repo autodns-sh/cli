@@ -32,14 +32,18 @@ Description:
 `
 
 type editOptions struct {
-	Domain     string
-	APIURL     string
-	Token      string
-	In         io.Reader
-	Out        io.Writer
-	EditFile   func(string) error
-	TempDir    string
-	KeepTempOn bool
+	Domain string
+	APIURL string
+	Token  string
+	// RefreshToken, if set, is called before each API request to obtain a
+	// current access token (the user may spend minutes in the editor, longer
+	// than an access token's lifetime).
+	RefreshToken func() (string, error)
+	In           io.Reader
+	Out          io.Writer
+	EditFile     func(string) error
+	TempDir      string
+	KeepTempOn   bool
 }
 
 type apiDomain struct {
@@ -95,9 +99,16 @@ func runEdit(args []string) {
 	}
 
 	err = editDomain(context.Background(), editOptions{
-		Domain:   domain,
-		APIURL:   apiURL,
-		Token:    tok.AccessToken,
+		Domain: domain,
+		APIURL: apiURL,
+		Token:  tok.AccessToken,
+		RefreshToken: func() (string, error) {
+			t, err := loadToken() // re-reads and refreshes if expired
+			if err != nil {
+				return "", err
+			}
+			return t.AccessToken, nil
+		},
 		In:       os.Stdin,
 		Out:      os.Stdout,
 		EditFile: openFileInEditor,
@@ -120,24 +131,36 @@ func editDomain(ctx context.Context, opts editOptions) error {
 	if opts.EditFile == nil {
 		opts.EditFile = openFileInEditor
 	}
+	// currentToken returns a fresh access token for each request, refreshing
+	// via the saved credentials when possible.
+	currentToken := func() (string, error) {
+		if opts.RefreshToken != nil {
+			return opts.RefreshToken()
+		}
+		return opts.Token, nil
+	}
 
 	domainName := strings.TrimSuffix(strings.TrimSpace(opts.Domain), ".")
 	if domainName == "" {
 		return fmt.Errorf("missing domain")
 	}
 
-	domain, err := findEditableDomain(ctx, opts.APIURL, opts.Token, domainName)
+	token, err := currentToken()
+	if err != nil {
+		return err
+	}
+	domain, err := findEditableDomain(ctx, opts.APIURL, token, domainName)
 	if err != nil {
 		return err
 	}
 
-	records, err := fetchDomainRecords(ctx, opts.APIURL, opts.Token, domain.ID)
+	records, err := fetchDomainRecords(ctx, opts.APIURL, token, domain.ID)
 	if err != nil {
 		return err
 	}
 	initial := []byte(renderEditableZone(domain.Name, records))
 
-	initialDiff, err := postZone(ctx, opts.APIURL, opts.Token, initial, true)
+	initialDiff, err := postZone(ctx, opts.APIURL, token, initial, true)
 	if err != nil {
 		return fmt.Errorf("checking current zone: %w", err)
 	}
@@ -172,7 +195,13 @@ func editDomain(ctx context.Context, opts editOptions) error {
 		return nil
 	}
 
-	diff, err := postZone(ctx, opts.APIURL, opts.Token, edited, true)
+	// The user may have spent minutes in the editor; refresh before posting.
+	token, err = currentToken()
+	if err != nil {
+		cleanupTemp = false
+		return fmt.Errorf("refreshing credentials: %w (edited file kept at %s)", err, path)
+	}
+	diff, err := postZone(ctx, opts.APIURL, token, edited, true)
 	if err != nil {
 		cleanupTemp = false
 		return fmt.Errorf("checking edited zone: %w (edited file kept at %s)", err, path)
@@ -189,7 +218,12 @@ func editDomain(ctx context.Context, opts editOptions) error {
 		return nil
 	}
 
-	applied, err := postZone(ctx, opts.APIURL, opts.Token, edited, false)
+	token, err = currentToken()
+	if err != nil {
+		cleanupTemp = false
+		return fmt.Errorf("refreshing credentials: %w (edited file kept at %s)", err, path)
+	}
+	applied, err := postZone(ctx, opts.APIURL, token, edited, false)
 	if err != nil {
 		cleanupTemp = false
 		return fmt.Errorf("applying edited zone: %w (edited file kept at %s)", err, path)
