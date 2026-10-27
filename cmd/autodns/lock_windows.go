@@ -37,10 +37,29 @@ func lockTokenFile() (func(), error) {
 		} else if !os.IsExist(err) {
 			return nil, fmt.Errorf("locking token file: %w", err)
 		}
-		// Stale check: same owner token twice, older than 2 minutes.
-		first, err1 := os.ReadFile(tokenFile)
+		// Stale check. Two cases:
+		//  - owner file present: same token twice + old mtime → crashed holder
+		//  - owner file missing (crash between mkdir and write, or mid-unlock):
+		//    old empty directory → safe to recover
 		info, err2 := os.Stat(path)
-		if err1 == nil && err2 == nil && time.Since(info.ModTime()) > 2*time.Minute {
+		if err2 != nil && !os.IsNotExist(err2) {
+			goto wait
+		}
+		if err2 == nil && time.Since(info.ModTime()) <= 2*time.Minute {
+			goto wait
+		}
+		{
+			first, err1 := os.ReadFile(tokenFile)
+			if err1 != nil {
+				// Ownerless directory: recover if empty and old.
+				entries, _ := os.ReadDir(path)
+				if len(entries) == 0 {
+					if err := os.Remove(path); err == nil {
+						continue
+					}
+				}
+				goto wait
+			}
 			time.Sleep(150 * time.Millisecond)
 			second, err3 := os.ReadFile(tokenFile)
 			if err3 == nil && string(first) == string(second) {
@@ -50,6 +69,7 @@ func lockTokenFile() (func(), error) {
 				}
 			}
 		}
+	wait:
 		if time.Now().After(deadline) {
 			return nil, fmt.Errorf("timed out waiting for token lock")
 		}
